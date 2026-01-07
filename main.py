@@ -20,45 +20,64 @@ class Data_Spider():
         note_info = None
         try:
             success, msg, note_info = self.xhs_apis.get_note_info(note_url, cookies_str, proxies)
-            if success:
+            if success and note_info and 'data' in note_info and 'items' in note_info['data'] and note_info['data']['items']:
                 note_info = note_info['data']['items'][0]
                 note_info['url'] = note_url
                 note_info = handle_note_info(note_info)
+            else:
+                success = False
+                msg = f"获取到的笔记信息不完整，success={success}, data={note_info}"
         except Exception as e:
             success = False
-            msg = e
+            msg = str(e)
         logger.info(f'爬取笔记信息 {note_url}: {success}, msg: {msg}')
         return success, msg, note_info
 
-    def spider_some_note(self, notes: list, cookies_str: str, base_path: dict, save_choice: str, excel_name: str = '', proxies=None):
+    def spider_some_note(self, notes: list, cookies_str: str, base_path: dict, save_choice: str, excel_name: str = '', min_likes=1000, min_collects=2000, proxies=None):
         """
         爬取一些笔记的信息
         :param notes:
         :param cookies_str:
         :param base_path:
+        :param min_likes: 最小点赞数阈值
+        :param min_collects: 最小收藏数阈值
         :return:
         """
         if (save_choice == 'all' or save_choice == 'excel') and excel_name == '':
             raise ValueError('excel_name 不能为空')
         note_list = []
+        filtered_list = []
         for note_url in notes:
             success, msg, note_info = self.spider_note(note_url, cookies_str, proxies)
             if note_info is not None and success:
                 note_list.append(note_info)
-        for note_info in note_list:
+                # 直接使用解析后的数字进行筛选
+                if note_info['liked_count'] > min_likes or note_info['collected_count'] > min_collects:
+                    filtered_list.append(note_info)
+        
+        # 只下载符合条件的笔记媒体
+        for note_info in filtered_list:
             if save_choice == 'all' or 'media' in save_choice:
                 download_note(note_info, base_path['media'], save_choice)
+        
+        # 只保存符合条件的笔记到Excel
         if save_choice == 'all' or save_choice == 'excel':
             file_path = os.path.abspath(os.path.join(base_path['excel'], f'{excel_name}.xlsx'))
-            save_to_xlsx(note_list, file_path)
+            # 传递搜索词给save_to_xlsx函数
+            save_to_xlsx(filtered_list, file_path, search_query=excel_name)
+        
+        logger.info(f'原始笔记数量: {len(note_list)}, 符合条件的笔记数量: {len(filtered_list)}')
+        return filtered_list
 
 
-    def spider_user_all_note(self, user_url: str, cookies_str: str, base_path: dict, save_choice: str, excel_name: str = '', proxies=None):
+    def spider_user_all_note(self, user_url: str, cookies_str: str, base_path: dict, save_choice: str, excel_name: str = '', min_likes=1000, min_collects=2000, proxies=None):
         """
         爬取一个用户的所有笔记
         :param user_url:
         :param cookies_str:
         :param base_path:
+        :param min_likes: 最小点赞数阈值
+        :param min_collects: 最小收藏数阈值
         :return:
         """
         note_list = []
@@ -71,14 +90,14 @@ class Data_Spider():
                     note_list.append(note_url)
             if save_choice == 'all' or save_choice == 'excel':
                 excel_name = user_url.split('/')[-1].split('?')[0]
-            self.spider_some_note(note_list, cookies_str, base_path, save_choice, excel_name, proxies)
+            filtered_list = self.spider_some_note(note_list, cookies_str, base_path, save_choice, excel_name, min_likes, min_collects, proxies)
         except Exception as e:
             success = False
             msg = e
         logger.info(f'爬取用户所有视频 {user_url}: {success}, msg: {msg}')
         return note_list, success, msg
 
-    def spider_some_search_note(self, query: str, require_num: int, cookies_str: str, base_path: dict, save_choice: str, sort_type_choice=0, note_type=0, note_time=0, note_range=0, pos_distance=0, geo: dict = None,  excel_name: str = '', proxies=None):
+    def spider_some_search_note(self, query: str, require_num: int, cookies_str: str, base_path: dict, save_choice: str, sort_type_choice=0, note_type=0, note_time=0, note_range=0, pos_distance=0, geo: dict = None,  excel_name: str = '', min_likes=1000, min_collects=2000, proxies=None):
         """
             指定数量搜索笔记，设置排序方式和笔记类型和笔记数量
             :param query 搜索的关键词
@@ -90,6 +109,8 @@ class Data_Spider():
             :param note_time 笔记时间 0 不限, 1 一天内, 2 一周内天, 3 半年内
             :param note_range 笔记范围 0 不限, 1 已看过, 2 未看过, 3 已关注
             :param pos_distance 位置距离 0 不限, 1 同城, 2 附近 指定这个必须要指定 geo
+            :param min_likes 最小点赞数阈值
+            :param min_collects 最小收藏数阈值
             返回搜索的结果
         """
         note_list = []
@@ -103,7 +124,7 @@ class Data_Spider():
                     note_list.append(note_url)
             if save_choice == 'all' or save_choice == 'excel':
                 excel_name = query
-            self.spider_some_note(note_list, cookies_str, base_path, save_choice, excel_name, proxies)
+            filtered_list = self.spider_some_note(note_list, cookies_str, base_path, save_choice, excel_name, min_likes, min_collects, proxies)
         except Exception as e:
             success = False
             msg = e
@@ -127,26 +148,25 @@ if __name__ == '__main__':
 
 
     # 1 爬取列表的所有笔记信息 笔记链接 如下所示 注意此url会过期！
-    notes = [
-        r'https://www.xiaohongshu.com/explore/683fe17f0000000023017c6a?xsec_token=ABBr_cMzallQeLyKSRdPk9fwzA0torkbT_ubuQP1ayvKA=&xsec_source=pc_user',
-    ]
-    data_spider.spider_some_note(notes, cookies_str, base_path, 'all', 'test')
+    # 注意：以下链接可能已过期，建议注释掉或替换为最新的笔记链接
+    # notes = [
+    #     r'https://www.xiaohongshu.com/explore/683fe17f0000000023017c6a?xsec_token=ABBr_cMzallQeLyKSRdPk9fwzA0torkbT_ubuQP1ayvKA=&xsec_source=pc_user',
+    # ]
+    # data_spider.spider_some_note(notes, cookies_str, base_path, 'all', 'test', min_likes=1000, min_collects=2000)
 
     # 2 爬取用户的所有笔记信息 用户链接 如下所示 注意此url会过期！
-    user_url = 'https://www.xiaohongshu.com/user/profile/64c3f392000000002b009e45?xsec_token=AB-GhAToFu07JwNk_AMICHnp7bSTjVz2beVIDBwSyPwvM=&xsec_source=pc_feed'
-    data_spider.spider_user_all_note(user_url, cookies_str, base_path, 'all')
+    # 注意：以下链接可能已过期，建议注释掉或替换为最新的用户链接
+    # user_url = 'https://www.xiaohongshu.com/user/profile/64c3f392000000002b009e45?xsec_token=AB-GhAToFu07JwNk_AMICHnp7bSTjVz2beVIDBwSyPwvM=&xsec_source=pc_feed'
+    # data_spider.spider_user_all_note(user_url, cookies_str, base_path, 'all', min_likes=1000, min_collects=2000)
 
-    # 3 搜索指定关键词的笔记
-    query = "榴莲"
-    query_num = 10
-    sort_type_choice = 0  # 0 综合排序, 1 最新, 2 最多点赞, 3 最多评论, 4 最多收藏
+    # 3 搜索指定关键词的笔记（推荐使用，会动态获取最新笔记）
+    query = "ai提示词"
+    query_num = 50  # 搜索50条笔记，确保有足够数据筛选出至少10条符合条件的
+    sort_type_choice = 2  # 2 最多点赞，这样能更快找到高互动笔记
     note_type = 0 # 0 不限, 1 视频笔记, 2 普通笔记
     note_time = 0  # 0 不限, 1 一天内, 2 一周内天, 3 半年内
     note_range = 0  # 0 不限, 1 已看过, 2 未看过, 3 已关注
     pos_distance = 0  # 0 不限, 1 同城, 2 附近 指定这个1或2必须要指定 geo
-    # geo = {
-    #     # 经纬度
-    #     "latitude": 39.9725,
-    #     "longitude": 116.4207
-    # }
-    data_spider.spider_some_search_note(query, query_num, cookies_str, base_path, 'all', sort_type_choice, note_type, note_time, note_range, pos_distance, geo=None)
+    
+    # 只保存到Excel，不下载媒体文件，减少请求
+    data_spider.spider_some_search_note(query, query_num, cookies_str, base_path, 'excel', sort_type_choice, note_type, note_time, note_range, pos_distance, geo=None, min_likes=1000, min_collects=2000)

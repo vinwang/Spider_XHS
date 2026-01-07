@@ -62,6 +62,36 @@ def handle_user_info(data, user_id):
         'tags': tags,
     }
 
+def parse_number(num_str):
+    """
+    将字符串格式的数字转换为整数，如 '2.7万' -> 27000
+    """
+    if isinstance(num_str, int):
+        return num_str
+    elif isinstance(num_str, str):
+        num_str = num_str.strip()
+        if '万' in num_str:
+            # 处理 '2.7万' 格式
+            try:
+                return int(float(num_str.replace('万', '')) * 10000)
+            except ValueError:
+                return 0
+        elif '千' in num_str:
+            # 处理 '2.7千' 格式
+            try:
+                return int(float(num_str.replace('千', '')) * 1000)
+            except ValueError:
+                return 0
+        else:
+            # 普通数字字符串
+            try:
+                return int(num_str)
+            except ValueError:
+                return 0
+    else:
+        return 0
+
+
 def handle_note_info(data):
     note_id = data['id']
     note_url = data['url']
@@ -78,26 +108,35 @@ def handle_note_info(data):
     if title.strip() == '':
         title = f'无标题'
     desc = data['note_card']['desc']
-    liked_count = data['note_card']['interact_info']['liked_count']
-    collected_count = data['note_card']['interact_info']['collected_count']
-    comment_count = data['note_card']['interact_info']['comment_count']
-    share_count = data['note_card']['interact_info']['share_count']
+    
+    # 解析互动数据，支持字符串格式
+    liked_count = parse_number(data['note_card']['interact_info']['liked_count'])
+    collected_count = parse_number(data['note_card']['interact_info']['collected_count'])
+    comment_count = parse_number(data['note_card']['interact_info']['comment_count'])
+    share_count = parse_number(data['note_card']['interact_info']['share_count'])
+    
     image_list_temp = data['note_card']['image_list']
     image_list = []
     for image in image_list_temp:
         try:
             image_list.append(image['info_list'][1]['url'])
-            # success, msg, img_url = XHS_Apis.get_note_no_water_img(image['info_list'][1]['url'])
-            # image_list.append(img_url)
         except:
             pass
+    
+    # 处理视频信息，增加异常处理
+    video_cover = None
+    video_addr = None
     if note_type == '视频':
-        video_cover = image_list[0]
-        video_addr = 'https://sns-video-bd.xhscdn.com/' + data['note_card']['video']['consumer']['origin_video_key']
-        # success, msg, video_addr = XHS_Apis.get_note_no_water_video(note_id)
-    else:
-        video_cover = None
-        video_addr = None
+        try:
+            if image_list:
+                video_cover = image_list[0]
+            # 尝试获取视频地址，处理缺少consumer字段的情况
+            if 'video' in data['note_card'] and 'consumer' in data['note_card']['video']:
+                video_addr = 'https://sns-video-bd.xhscdn.com/' + data['note_card']['video']['consumer']['origin_video_key']
+        except Exception as e:
+            # 如果获取视频地址失败，不影响其他信息的保存
+            pass
+    
     tags_temp = data['note_card']['tag_list']
     tags = []
     for tag in tags_temp:
@@ -175,11 +214,12 @@ def handle_comment_info(data):
         'ip_location': ip_location,
         'pictures': pictures,
     }
-def save_to_xlsx(datas, file_path, type='note'):
+def save_to_xlsx(datas, file_path, type='note', search_query=''):
     wb = openpyxl.Workbook()
     ws = wb.active
     if type == 'note':
-        headers = ['笔记id', '笔记url', '笔记类型', '用户id', '用户主页url', '昵称', '头像url', '标题', '描述', '点赞数量', '收藏数量', '评论数量', '分享数量', '视频封面url', '视频地址url', '图片地址url列表', '标签', '上传时间', 'ip归属地']
+        # 按照用户要求的列顺序：搜索词, 标题, 描述, 标签, 点赞数量, 收藏数量, 评论数量, 分享数量, 笔记url, 笔记id, 用户id, 用户主页url, 昵称, 头像url, 图片地址url列表, 视频封面url, 视频地址url, 上传时间, ip归属地
+        headers = ['搜索词', '标题', '描述', '标签', '点赞数量', '收藏数量', '评论数量', '分享数量', '笔记url', '笔记id', '用户id', '用户主页url', '昵称', '头像url', '图片地址url列表', '视频封面url', '视频地址url', '上传时间', 'ip归属地']
     elif type == 'user':
         headers = ['用户id', '用户主页url', '用户名', '头像url', '小红书号', '性别', 'ip地址', '介绍', '关注数量', '粉丝数量', '作品被赞和收藏数量', '标签']
     else:
@@ -187,7 +227,32 @@ def save_to_xlsx(datas, file_path, type='note'):
     ws.append(headers)
     for data in datas:
         data = {k: norm_text(str(v)) for k, v in data.items()}
-        ws.append(list(data.values()))
+        if type == 'note':
+            # 按照新的列顺序构建数据行
+            row_data = [
+                search_query,  # 搜索词
+                data.get('title', ''),  # 标题
+                data.get('desc', ''),  # 描述
+                str(data.get('tags', [])),  # 标签
+                data.get('liked_count', 0),  # 点赞数量
+                data.get('collected_count', 0),  # 收藏数量
+                data.get('comment_count', 0),  # 评论数量
+                data.get('share_count', 0),  # 分享数量
+                data.get('note_url', ''),  # 笔记url
+                data.get('note_id', ''),  # 笔记id
+                data.get('user_id', ''),  # 用户id
+                data.get('home_url', ''),  # 用户主页url
+                data.get('nickname', ''),  # 昵称
+                data.get('avatar', ''),  # 头像url
+                str(data.get('image_list', [])),  # 图片地址url列表
+                data.get('video_cover', ''),  # 视频封面url
+                data.get('video_addr', ''),  # 视频地址url
+                data.get('upload_time', ''),  # 上传时间
+                data.get('ip_location', '')  # ip归属地
+            ]
+            ws.append(row_data)
+        else:
+            ws.append(list(data.values()))
     wb.save(file_path)
     logger.info(f'数据保存至 {file_path}')
 
