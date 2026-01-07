@@ -57,8 +57,14 @@ def crawl():
     # 启动爬取线程
     def crawl_thread():
         global crawl_status
+        
+        # 进度回调函数
+        def progress_callback(progress, message):
+            crawl_status['progress'] = progress
+            crawl_status['message'] = message
+        
         try:
-            # 调用爬虫函数
+            # 调用爬虫函数，传递进度回调
             note_list, success, msg = data_spider.spider_some_search_note(
                 query=query,
                 require_num=query_num,
@@ -68,7 +74,8 @@ def crawl():
                 sort_type_choice=sort_type_choice,
                 note_type=note_type,
                 min_likes=min_likes,
-                min_collects=min_collects
+                min_collects=min_collects,
+                progress_callback=progress_callback
             )
             
             # 更新爬取状态

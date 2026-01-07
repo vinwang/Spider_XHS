@@ -33,7 +33,7 @@ class Data_Spider():
         logger.info(f'爬取笔记信息 {note_url}: {success}, msg: {msg}')
         return success, msg, note_info
 
-    def spider_some_note(self, notes: list, cookies_str: str, base_path: dict, save_choice: str, excel_name: str = '', min_likes=1000, min_collects=2000, proxies=None):
+    def spider_some_note(self, notes: list, cookies_str: str, base_path: dict, save_choice: str, excel_name: str = '', min_likes=1000, min_collects=2000, proxies=None, progress_callback=None):
         """
         爬取一些笔记的信息
         :param notes:
@@ -41,19 +41,33 @@ class Data_Spider():
         :param base_path:
         :param min_likes: 最小点赞数阈值
         :param min_collects: 最小收藏数阈值
+        :param progress_callback: 进度回调函数
         :return:
         """
         if (save_choice == 'all' or save_choice == 'excel') and excel_name == '':
             raise ValueError('excel_name 不能为空')
+        
+        total_notes = len(notes)
         note_list = []
         filtered_list = []
-        for note_url in notes:
+        
+        for index, note_url in enumerate(notes):
+            # 计算当前进度
+            progress = 20 + int((index / total_notes) * 60)  # 20% 到 80% 之间
+            if progress_callback:
+                progress_callback(progress, f'正在爬取第 {index+1}/{total_notes} 条笔记...')
+            
+            # 爬取单条笔记
             success, msg, note_info = self.spider_note(note_url, cookies_str, proxies)
             if note_info is not None and success:
                 note_list.append(note_info)
                 # 直接使用解析后的数字进行筛选
                 if note_info['liked_count'] > min_likes or note_info['collected_count'] > min_collects:
                     filtered_list.append(note_info)
+        
+        # 更新进度：爬取完成，开始保存数据
+        if progress_callback:
+            progress_callback(80, '爬取完成，开始保存数据...')
         
         # 只下载符合条件的笔记媒体
         for note_info in filtered_list:
@@ -65,6 +79,10 @@ class Data_Spider():
             file_path = os.path.abspath(os.path.join(base_path['excel'], f'{excel_name}.xlsx'))
             # 传递搜索词给save_to_xlsx函数
             save_to_xlsx(filtered_list, file_path, search_query=excel_name)
+        
+        # 更新进度：保存完成
+        if progress_callback:
+            progress_callback(100, '爬取完成')
         
         logger.info(f'原始笔记数量: {len(note_list)}, 符合条件的笔记数量: {len(filtered_list)}')
         return filtered_list
@@ -97,7 +115,7 @@ class Data_Spider():
         logger.info(f'爬取用户所有视频 {user_url}: {success}, msg: {msg}')
         return note_list, success, msg
 
-    def spider_some_search_note(self, query: str, require_num: int, cookies_str: str, base_path: dict, save_choice: str, sort_type_choice=0, note_type=0, note_time=0, note_range=0, pos_distance=0, geo: dict = None,  excel_name: str = '', min_likes=1000, min_collects=2000, proxies=None):
+    def spider_some_search_note(self, query: str, require_num: int, cookies_str: str, base_path: dict, save_choice: str, sort_type_choice=0, note_type=0, note_time=0, note_range=0, pos_distance=0, geo: dict = None,  excel_name: str = '', min_likes=1000, min_collects=2000, proxies=None, progress_callback=None):
         """
             指定数量搜索笔记，设置排序方式和笔记类型和笔记数量
             :param query 搜索的关键词
@@ -111,23 +129,37 @@ class Data_Spider():
             :param pos_distance 位置距离 0 不限, 1 同城, 2 附近 指定这个必须要指定 geo
             :param min_likes 最小点赞数阈值
             :param min_collects 最小收藏数阈值
+            :param progress_callback 进度回调函数
             返回搜索的结果
         """
         note_list = []
         try:
+            # 更新进度：开始搜索
+            if progress_callback:
+                progress_callback(0, '正在搜索笔记...')
+            
             success, msg, notes = self.xhs_apis.search_some_note(query, require_num, cookies_str, sort_type_choice, note_type, note_time, note_range, pos_distance, geo, proxies)
             if success:
                 notes = list(filter(lambda x: x['model_type'] == "note", notes))
                 logger.info(f'搜索关键词 {query} 笔记数量: {len(notes)}')
+                
+                # 更新进度：搜索完成，开始爬取笔记
+                if progress_callback:
+                    progress_callback(20, f'搜索到 {len(notes)} 条笔记，开始爬取...')
+                
                 for note in notes:
                     note_url = f"https://www.xiaohongshu.com/explore/{note['id']}?xsec_token={note['xsec_token']}"
                     note_list.append(note_url)
             if save_choice == 'all' or save_choice == 'excel':
                 excel_name = query
-            filtered_list = self.spider_some_note(note_list, cookies_str, base_path, save_choice, excel_name, min_likes, min_collects, proxies)
+            
+            # 调用spider_some_note并传递进度回调
+            filtered_list = self.spider_some_note(note_list, cookies_str, base_path, save_choice, excel_name, min_likes, min_collects, proxies, progress_callback)
         except Exception as e:
             success = False
             msg = e
+            if progress_callback:
+                progress_callback(100, f'爬取失败: {str(e)}')
         logger.info(f'搜索关键词 {query} 笔记: {success}, msg: {msg}')
         return note_list, success, msg
 
