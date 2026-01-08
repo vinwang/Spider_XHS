@@ -7,8 +7,19 @@ import os
 
 app = Flask(__name__)
 
-# 初始化爬虫
-cookies_str, base_path = init()
+# 初始化爬虫（只用于获取路径）
+base_path = {}
+try:
+    _, base_path = init()
+except:
+    # 如果配置文件不存在，创建默认路径
+    base_path = {
+        'excel': os.path.abspath('datas/excel_datas'),
+        'media': os.path.abspath('datas/media_datas')
+    }
+    for path in base_path.values():
+        os.makedirs(path, exist_ok=True)
+
 data_spider = Data_Spider()
 
 # 爬取状态管理
@@ -39,12 +50,21 @@ def crawl():
     
     # 获取请求参数
     query = request.form.get('query', '榴莲')
-    query_num = int(request.form.get('query_num', 50))
+    query_num = int(request.form.get('query_num', 30))
     min_likes = int(request.form.get('min_likes', 1000))
     min_collects = int(request.form.get('min_collects', 2000))
     sort_type_choice = int(request.form.get('sort_type', 2))
     note_type = int(request.form.get('note_type', 0))
     save_choice = request.form.get('save_choice', 'excel')
+    
+    # 获取用户提交的Cookie
+    user_cookies = request.form.get('cookies', '').strip()
+    
+    if not user_cookies:
+        return jsonify({
+            'success': False,
+            'message': '请填写小红书Cookie！'
+        })
     
     # 重置爬取状态
     crawl_status = {
@@ -64,11 +84,11 @@ def crawl():
             crawl_status['message'] = message
         
         try:
-            # 调用爬虫函数，传递进度回调
+            # 调用爬虫函数，使用用户提交的Cookie
             note_list, success, msg = data_spider.spider_some_search_note(
                 query=query,
                 require_num=query_num,
-                cookies_str=cookies_str,
+                cookies_str=user_cookies,  # 使用用户提交的Cookie
                 base_path=base_path,
                 save_choice=save_choice,
                 sort_type_choice=sort_type_choice,
@@ -130,4 +150,9 @@ if __name__ == '__main__':
     # 使用waitress作为WSGI服务器，提供更好的稳定性
     from waitress import serve
     print('服务已启动，访问地址: http://localhost:5000')
+    print('=' * 60)
+    print('注意：Cookie需要用户在页面中手动输入')
+    print('获取方法：登录小红书后，按F12打开开发者工具，')
+    print('在网络标签页中找到请求的Cookie并复制')
+    print('=' * 60)
     serve(app, host='0.0.0.0', port=5000)

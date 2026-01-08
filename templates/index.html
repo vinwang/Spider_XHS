@@ -98,7 +98,8 @@
         }
         
         .form-control,
-        .form-select {
+        .form-select,
+        textarea.form-control {
             background: rgba(255, 255, 255, 0.05);
             border: 1px solid var(--border-color);
             color: var(--text-primary);
@@ -107,7 +108,8 @@
         }
         
         .form-control:focus,
-        .form-select:focus {
+        .form-select:focus,
+        textarea.form-control:focus {
             background: rgba(255, 255, 255, 0.1);
             border-color: var(--primary-color);
             box-shadow: 0 0 0 0.2rem rgba(0, 212, 255, 0.25);
@@ -119,19 +121,35 @@
             opacity: 0.5;
         }
         
+        textarea.form-control {
+            min-height: 100px;
+            resize: vertical;
+        }
+        
+        /* Cookie说明样式 */
+        .cookie-help {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            background: rgba(255, 255, 255, 0.05);
+            padding: 10px;
+            border-radius: 6px;
+            margin-top: 5px;
+        }
+        
+        .cookie-help strong {
+            color: var(--warning-color);
+        }
+        
         /* 修复下拉菜单文字颜色 */
         select.form-select {
-            /* 确保下拉菜单选项文字颜色可见 */
             color: var(--text-primary) !important;
         }
         
-        /* 修复Bootstrap 5下拉菜单选项样式 */
         .form-select option {
             background: var(--background-color);
             color: var(--text-primary);
         }
         
-        /* 修复浏览器默认下拉箭头 */
         .form-select {
             appearance: auto;
             background-image: none;
@@ -290,20 +308,6 @@
             color: var(--text-secondary);
         }
         
-        /* 加载动画 */
-        @keyframes pulse {
-            0%, 100% {
-                opacity: 1;
-            }
-            50% {
-                opacity: 0.5;
-            }
-        }
-        
-        .pulse {
-            animation: pulse 1.5s ease-in-out infinite;
-        }
-        
         /* 响应式设计 */
         @media (max-width: 768px) {
             .container {
@@ -333,6 +337,28 @@
             <div class="card-body">
                 <form id="crawlForm">
                     <div class="row g-3">
+                        <!-- Cookie输入 -->
+                        <div class="col-12">
+                            <label for="cookies" class="form-label">
+                                🍪 小红书Cookie <span class="text-danger">*必填</span>
+                            </label>
+                            <textarea class="form-control" id="cookies" name="cookies" rows="3" 
+                                placeholder="请粘贴你的小红书Cookie...
+示例：a1=xxx; webId=xxx; gid=xxx; ..."
+                                required></textarea>
+                            <div class="cookie-help">
+                                <strong>⚠️ 获取方法：</strong>
+                                1. 登录 <a href="https://www.xiaohongshu.com" target="_blank" style="color: var(--primary-color);">小红书网站</a>
+                                2. 按 <kbd>F12</kbd> 打开开发者工具
+                                3. 切换到「网络(Network)」标签
+                                4. 刷新页面，点击任意请求
+                                5. 在「请求头」中找到 <kbd>Cookie</kbd>
+                                6. 复制完整的Cookie字符串
+                                <br><br>
+                                <strong>🔒 安全提示：</strong>Cookie包含你的登录信息，请勿分享给他人！
+                            </div>
+                        </div>
+                        
                         <!-- 搜索关键词 -->
                         <div class="col-md-6">
                             <label for="query" class="form-label">搜索关键词</label>
@@ -342,7 +368,7 @@
                         <!-- 搜索数量 -->
                         <div class="col-md-6">
                             <label for="query_num" class="form-label">搜索数量</label>
-                            <input type="number" class="form-control" id="query_num" name="query_num" value="50" min="1" max="200" required>
+                            <input type="number" class="form-control" id="query_num" name="query_num" value="30" min="1" max="200" required>
                         </div>
                         
                         <!-- 最低点赞数 -->
@@ -393,8 +419,8 @@
                     <!-- 提交按钮 -->
                     <div class="d-grid gap-2 mt-4">
                         <button type="submit" class="btn btn-primary btn-lg" id="submitBtn">
-                            <span id="btnText">开始爬取</span>
-                            <span id="btnLoader" style="display: none;">⏳</span>
+                            <span id="btnText">🚀 开始爬取</span>
+                            <span id="btnLoader" style="display: none;">⏳ 爬取中...</span>
                         </button>
                     </div>
                 </form>
@@ -417,6 +443,13 @@
                 <div id="resultContent"></div>
             </div>
         </div>
+        
+        <!-- 页脚 -->
+        <div class="text-center mt-5 mb-3" style="color: var(--text-secondary);">
+            <small>
+                💡 提示：Cookie可能会过期，如遇失败请重新获取Cookie
+            </small>
+        </div>
     </div>
     
     <!-- 引入jQuery -->
@@ -430,6 +463,13 @@
             // 表单提交事件
             $('#crawlForm').submit(function(e) {
                 e.preventDefault();
+                
+                // 验证Cookie
+                const cookies = $('#cookies').val().trim();
+                if (!cookies) {
+                    alert('请填写小红书Cookie！');
+                    return;
+                }
                 
                 // 禁用提交按钮，显示加载动画
                 $('#submitBtn').prop('disabled', true);
@@ -531,7 +571,7 @@
                     resultHtml = `
                         <div class="alert alert-success" role="alert">
                             <h6>✅ 爬取成功！</h6>
-                            <p>📝 消息：${result.message}</p>
+                            <p>📝 ${result.message}</p>
                             <p>📊 爬取笔记数量：${result.total_notes}</p>
                             <p>💾 Excel保存路径：<code>${result.excel_path}</code></p>
                             <p>🎉 您可以直接在文件系统中查看该文件。</p>
@@ -542,6 +582,7 @@
                         <div class="alert alert-danger" role="alert">
                             <h6>❌ 爬取失败！</h6>
                             <p>💥 错误消息：${result.message}</p>
+                            <p>💡 建议：请检查Cookie是否有效，或稍后重试</p>
                         </div>
                     `;
                 }
